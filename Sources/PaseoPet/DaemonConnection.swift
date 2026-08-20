@@ -5,6 +5,7 @@ enum ActivityStatus {
 }
 
 struct ActivityEvent {
+    let agentId: String
     let id: String
     let title: String
     let subtitle: String?
@@ -17,6 +18,8 @@ final class DaemonConnection {
     private let onStateChange: (PetState) -> Void
     private let onActivity: (ActivityEvent) -> Void
     private let clientId = "paseo-pet-\(UUID().uuidString.prefix(8))"
+    private let port: String
+    private let password: String?
     private var task: URLSessionWebSocketTask?
     private var connected = false
     private var pollTimer: DispatchSourceTimer?
@@ -32,14 +35,18 @@ final class DaemonConnection {
     var onPermissionResolved: ((String, String) -> Void)?
 
     init(onStateChange: @escaping (PetState) -> Void, onActivity: @escaping (ActivityEvent) -> Void) {
+        let environment = ProcessInfo.processInfo.environment
+        self.port = environment["PASEO_PORT"] ?? "6767"
+        let environmentPassword = environment["PASEO_PASSWORD"]
+        self.password = environmentPassword?.isEmpty == false ? environmentPassword : CredentialStore.loadPassword()
         self.onStateChange = onStateChange
         self.onActivity = onActivity
+#if DEBUG
+        CredentialStore.assertSecurityRules()
+#endif
     }
 
     func connect() {
-        let port = ProcessInfo.processInfo.environment["PASEO_PORT"] ?? "6767"
-        let password = ProcessInfo.processInfo.environment["PASEO_PASSWORD"] ?? KeychainHelper.loadPassword()
-
         guard let url = URL(string: "ws://localhost:\(port)/ws") else { return }
 
         disconnect()
@@ -229,19 +236,19 @@ final class DaemonConnection {
         let title = agent["title"] as? String ?? "Agent"
         let requiresAttention = agent["requiresAttention"] as? Bool ?? false
 
-        // Codex session status: waiting > failed > running > review > idle
+        // Codex session status: waiting > failed > review > running > idle
         // closed/initializing are not visible states
         let sessionStatus: SessionStatus
         if perms > 0 {
             sessionStatus = .waiting
         } else if status == "error" {
             sessionStatus = .failed
+        } else if requiresAttention {
+            sessionStatus = .review
         } else if status == "running" {
             sessionStatus = .running
         } else if status == "closed" || status == "initializing" {
             sessionStatus = .idle
-        } else if requiresAttention {
-            sessionStatus = .review
         } else {
             sessionStatus = .idle
         }
@@ -277,8 +284,8 @@ final class DaemonConnection {
     private func aggregateState() -> PetState {
         if agentStatuses.values.contains(.waiting) { return .waiting }
         if agentStatuses.values.contains(.failed) { return .failed }
-        if agentStatuses.values.contains(.running) { return .running }
         if agentStatuses.values.contains(.review) { return .review }
+        if agentStatuses.values.contains(.running) { return .running }
         return .idle
     }
 
@@ -291,13 +298,15 @@ final class DaemonConnection {
     }
 
     private func handleAgentStream(_ payload: [String: Any]) {
-        guard let event = payload["event"] as? [String: Any] else { return }
-        let agentId = payload["agentId"] as? String ?? ""
+        guard let event = payload["event"] as? [String: Any],
+              let agentId = payload["agentId"] as? String, !agentId.isEmpty else { return }
         latestAgentId = agentId
         let eventType = event["type"] as? String
 
         if eventType == "permission_requested", let request = event["request"] as? [String: Any] {
-            onStateChange(.waiting)
+            agentStatuses[agentId] = .waiting
+            agentPermissionCounts[agentId] = max(1, agentPermissionCounts[agentId] ?? 0)
+            onStateChange(aggregateState())
             onPermission?(makePermissionNotification(agentId: agentId, request: request))
             return
         }
@@ -305,6 +314,7 @@ final class DaemonConnection {
         if eventType == "permission_resolved",
            let requestId = event["requestId"] as? String {
             onPermissionResolved?(agentId, requestId)
+            sendFetchAgents()
         }
 
         if eventType == "timeline", let item = event["item"] as? [String: Any],
@@ -315,7 +325,11 @@ final class DaemonConnection {
             let detail = item["detail"] as? [String: Any]
             let (title, subtitle) = formatActivityParts(name: name, detail: detail, status: toolStatus ?? "completed")
             let actStatus: ActivityStatus = toolStatus == "running" ? .running : .completed
-            onActivity(ActivityEvent(id: callId, title: title, subtitle: subtitle, status: actStatus))
+            let activity = ActivityEvent(agentId: agentId, id: callId, title: title, subtitle: subtitle, status: actStatus)
+#if DEBUG
+            assert(activity.agentId == agentId, "Tool activity must stay attached to its session")
+#endif
+            onActivity(activity)
         }
     }
 

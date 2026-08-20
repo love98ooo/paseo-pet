@@ -16,7 +16,7 @@ AppDelegate
 └── DaemonConnection ── WebSocket ── Paseo daemon
 ```
 
-The app uses Apple frameworks only: AppKit, SwiftUI, Foundation, QuartzCore, CoreGraphics, and Security.
+The app uses Apple frameworks only: AppKit, SwiftUI, Foundation, QuartzCore, and CoreGraphics.
 
 ## Data flow
 
@@ -26,7 +26,7 @@ The app uses Apple frameworks only: AppKit, SwiftUI, Foundation, QuartzCore, Cor
 - Tool timeline → one in-place activity bubble
 - Permission requests → actionable waiting bubble
 
-All session RPCs use the Paseo session envelope. The daemon password comes from `PASEO_PASSWORD` or macOS Keychain.
+All session RPCs use the Paseo session envelope. The daemon password comes from non-empty `PASEO_PASSWORD` or the private local credential file.
 
 ## Pet animation
 
@@ -54,7 +54,7 @@ A non-activating transparent panel anchored above the pet. Its UI is adapted fro
 - Stable thread IDs update bubbles in place
 - Expanded by default
 - 34px toggle collapses without deleting messages
-- A new update temporarily reveals a collapsed stack for five seconds
+- A collapsed stack stays hidden across updates while its badge and count continue to refresh
 - Session, activity, permission, first-awake, and expiration state share one panel
 
 Permission actions remain visible. Running session actions appear on hover. Transparent panel areas do not intentionally add controls.
@@ -78,11 +78,12 @@ Pet animation uses the highest-priority active session: waiting, failed, running
 ## Persistence
 
 - Pet position, size, and first-awake state: `UserDefaults`
-- Daemon password: macOS Keychain
+- Daemon password: `~/Library/Application Support/PaseoPet/daemon-password` (`0700` parent directory, `0600` file)
 
 ## Security
 
 - The default WebSocket target is localhost.
 - Credentials are not written to project files or logs.
+- The local credential file is readable only by the current macOS user account.
 - Pet assets are read from `~/.codex/pets/`.
 - No telemetry or updater is included.

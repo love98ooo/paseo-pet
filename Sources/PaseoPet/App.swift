@@ -8,6 +8,19 @@ private extension CharacterSet {
     }()
 }
 
+private struct SessionPresentation: Equatable {
+    let status: SessionStatus
+    let sessionTitle: String
+    let sessionSubtitle: String?
+    let activityId: String?
+    let activityTitle: String?
+    let activitySubtitle: String?
+    let permissionRequestId: String?
+    let permissionTitle: String?
+    let permissionDescription: String?
+    let permissionActionIds: String?
+}
+
 @main
 struct PaseoPetApp {
     static func main() {
@@ -31,6 +44,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pets: [PetEntry] = []
     private var activePetId: String?
     private var petSize: CGFloat = 192
+    private var dismissedSessionPresentations: [String: SessionPresentation] = [:]
+    private var sessionsByAgentId: [String: SessionNotification] = [:]
+    private var activitiesByAgentId: [String: ActivityEvent] = [:]
+    private var permissionsByAgentId: [String: PermissionNotification] = [:]
 
     private static let sizeKey = "petSize"
     private static let greetedPetsKey = "firstAwakePetIds"
@@ -41,7 +58,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pets = PetCatalog.scan()
         petWindow = PetWindow()
         messagePanel = MessagePanelWindow(anchorWindow: petWindow, petSize: petWindow.frame.size)
+        messagePanel.onDismissMessage = { [weak self] in self?.dismissSession($0) }
         quickChat = QuickChatWindow(anchorWindow: petWindow) { [weak self] text in self?.daemonConnection?.sendMessage(text: text) }
+#if DEBUG
+        Self.assertDismissalBehavior()
+#endif
         setupTray()
         if let first = pets.first { selectPet(first) }
         applySize(petSize)
@@ -93,17 +114,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleQuickChat() { quickChat.toggle() }
 
     @objc private func setPassword() {
-        let alert = NSAlert(); alert.messageText = "Paseo Daemon Password"; alert.informativeText = "Enter the password for ws://localhost:6767"
+        let alert = NSAlert(); alert.messageText = "Paseo Daemon Password"; alert.informativeText = "Enter the password for ws://localhost:6767. It will be stored in a private local file."
         alert.addButton(withTitle: "Save"); alert.addButton(withTitle: "Cancel")
         let input = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24)); input.placeholderString = "Password"; alert.accessoryView = input
         NSApp.activate(ignoringOtherApps: true)
         if alert.runModal() == .alertFirstButtonReturn, !input.stringValue.isEmpty {
-            if KeychainHelper.savePassword(input.stringValue) {
+            if CredentialStore.savePassword(input.stringValue) {
                 reconnectDaemon()
             } else {
                 let error = NSAlert()
                 error.messageText = "Could not save password"
-                error.informativeText = "Paseo Pet could not write to macOS Keychain."
+                error.informativeText = "Paseo Pet could not securely write ~/Library/Application Support/PaseoPet/daemon-password."
                 error.runModal()
             }
         }
@@ -116,26 +137,139 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onStateChange: { [weak self] in self?.engine.setState($0) },
             onActivity: { [weak self] in self?.handleActivity($0) }
         )
-        conn.onPermission = { [weak self] permission in self?.showPermission(permission) }
-        conn.onPermissionResolved = { [weak self] _, requestId in self?.messagePanel.clearBubble(threadId: "perm-\(requestId)") }
-        conn.onPermissionCleared = { [weak self] agentId in self?.messagePanel.clearPermissions(for: agentId) }
-        conn.onSessionNotification = { [weak self] session in self?.showSession(session) }
-        conn.onAgentRemoved = { [weak self] agentId in self?.messagePanel.clearAgent(agentId) }
+        conn.onPermission = { [weak self] in self?.handlePermission($0) }
+        conn.onPermissionResolved = { [weak self] in self?.handlePermissionResolved(agentId: $0, requestId: $1) }
+        conn.onPermissionCleared = { [weak self] in self?.clearPermission(agentId: $0) }
+        conn.onSessionNotification = { [weak self] in self?.handleSession($0) }
+        conn.onAgentRemoved = { [weak self] in self?.removeAgent($0) }
         return conn
     }
 
-    private func showSession(_ session: SessionNotification) {
-        guard session.status != .idle else { messagePanel.clearBubble(threadId: session.agentId); return }
+    private func handleSession(_ session: SessionNotification) {
+        guard session.status != .idle else { removeAgent(session.agentId); return }
+
+        switch session.status {
+        case .waiting:
+            activitiesByAgentId[session.agentId] = nil
+        case .running:
+            permissionsByAgentId[session.agentId] = nil
+        case .failed, .review:
+            activitiesByAgentId[session.agentId] = nil
+            permissionsByAgentId[session.agentId] = nil
+        case .idle:
+            break
+        }
+        sessionsByAgentId[session.agentId] = session
+        renderSession(session.agentId)
+    }
+
+    private func handlePermission(_ permission: PermissionNotification) {
+        permissionsByAgentId[permission.agentId] = permission
+        activitiesByAgentId[permission.agentId] = nil
+        if var session = sessionsByAgentId[permission.agentId] {
+            session.status = .waiting
+            sessionsByAgentId[permission.agentId] = session
+        }
+        renderSession(permission.agentId)
+    }
+
+    private func handlePermissionResolved(agentId: String, requestId: String) {
+        guard permissionsByAgentId[agentId]?.requestId == requestId else { return }
+        permissionsByAgentId[agentId] = nil
+        renderSession(agentId)
+    }
+
+    private func clearPermission(agentId: String) {
+        permissionsByAgentId[agentId] = nil
+        renderSession(agentId)
+    }
+
+    private func handleActivity(_ activity: ActivityEvent) {
+        switch activity.status {
+        case .running:
+            if let session = sessionsByAgentId[activity.agentId], session.status != .running { return }
+            activitiesByAgentId[activity.agentId] = activity
+            renderSession(activity.agentId)
+        case .completed:
+            guard activitiesByAgentId[activity.agentId]?.id == activity.id else { return }
+            activitiesByAgentId[activity.agentId] = nil
+            renderSession(activity.agentId)
+        }
+    }
+
+    private func removeAgent(_ agentId: String) {
+        sessionsByAgentId[agentId] = nil
+        activitiesByAgentId[agentId] = nil
+        permissionsByAgentId[agentId] = nil
+        dismissedSessionPresentations[agentId] = nil
+        messagePanel.clearAgent(agentId)
+    }
+
+    private func renderSession(_ agentId: String) {
+        guard let session = sessionsByAgentId[agentId] else { return }
+        let presentation = sessionPresentation(for: agentId, session: session)
+        if dismissedSessionPresentations[agentId] == presentation {
+            messagePanel.clearBubble(threadId: agentId)
+            return
+        }
+        dismissedSessionPresentations[agentId] = nil
+
+        let permission = permissionsByAgentId[agentId]
+        let activity = activitiesByAgentId[agentId]
         var actions: [PetBubbleAction] = []
-        if session.status == .running {
+        var actionsRequireHover = true
+        if session.status == .waiting, let permission {
+            actions = permission.actions.prefix(3).map { action in
+                PetBubbleAction(
+                    id: action.id,
+                    label: action.label,
+                    tone: action.behavior == "allow" ? (action.variant == "danger" ? .danger : .primary) : .normal,
+                    handler: { [weak self] in
+                        self?.daemonConnection.respondToPermission(
+                            agentId: agentId,
+                            requestId: permission.requestId,
+                            behavior: action.behavior,
+                            selectedActionId: action.id
+                        )
+                    }
+                )
+            }
+            actionsRequireHover = false
+        } else if session.status == .running {
             actions = [PetBubbleAction(id: "stop", label: "Stop", handler: { [weak self] in self?.daemonConnection.stopAgent(agentId: session.agentId) })]
+        }
+
+        let detail: String = switch session.status {
+        case .waiting:
+            if let permission {
+                permission.description.map { "\(permission.title) · \($0)" } ?? permission.title
+            } else {
+                "Needs input"
+            }
+        case .running:
+            if let activity {
+                activity.subtitle.map { "\(activity.title) · \($0)" } ?? activity.title
+            } else {
+                "Thinking"
+            }
+        case .review: "Ready"
+        case .failed: "Blocked"
+        case .idle: ""
         }
         let bubble = PetBubble(
             title: session.title,
-            detail: session.subtitle,
+            detail: detail,
             indicator: session.status.indicator,
             actions: actions,
-            onActivate: { [weak self] in self?.openAgent(session.agentId) }
+            actionsRequireHover: actionsRequireHover,
+            detailLineLimit: 1,
+            onActivate: { [weak self] in
+                guard let self else { return }
+                self.openAgent(session.agentId)
+                if session.status == .review {
+                    self.dismissSession(session.agentId)
+                }
+            }
         )
         let ttl: TimeInterval? = switch session.status {
         case .failed: 3600
@@ -146,34 +280,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         messagePanel.setBubble(bubble, threadId: session.agentId, agentId: session.agentId, ttl: ttl)
     }
 
-    private func showPermission(_ permission: PermissionNotification) {
-        let actions = permission.actions.prefix(3).map { action in
-            PetBubbleAction(
-                id: action.id,
-                label: action.label,
-                tone: action.behavior == "allow" ? (action.variant == "danger" ? .danger : .primary) : .normal,
-                handler: { [weak self] in
-                    self?.daemonConnection.respondToPermission(
-                        agentId: permission.agentId,
-                        requestId: permission.requestId,
-                        behavior: action.behavior,
-                        selectedActionId: action.id
-                    )
-                }
-            )
+    private func dismissSession(_ agentId: String) {
+        if let session = sessionsByAgentId[agentId] {
+            dismissedSessionPresentations[agentId] = sessionPresentation(for: agentId, session: session)
         }
-        let bubble = PetBubble(title: permission.title, detail: permission.description, indicator: .waiting, actions: Array(actions), actionsRequireHover: false)
-        messagePanel.setBubble(bubble, threadId: "perm-\(permission.requestId)", agentId: permission.agentId, ttl: 86400)
+        messagePanel.clearBubble(threadId: agentId)
     }
 
-    private func handleActivity(_ activity: ActivityEvent) {
-        let indicator: PetBubbleIndicator = activity.status == .running ? .working : .success
-        messagePanel.setBubble(
-            PetBubble(title: activity.title, detail: activity.subtitle, indicator: indicator),
-            threadId: "activity",
-            ttl: activity.status == .completed ? 3 : nil
+    private func sessionPresentation(for agentId: String, session: SessionNotification) -> SessionPresentation {
+        let activity = activitiesByAgentId[agentId]
+        let permission = permissionsByAgentId[agentId]
+        return SessionPresentation(
+            status: session.status,
+            sessionTitle: session.title,
+            sessionSubtitle: session.subtitle,
+            activityId: activity?.id,
+            activityTitle: activity?.title,
+            activitySubtitle: activity?.subtitle,
+            permissionRequestId: permission?.requestId,
+            permissionTitle: permission?.title,
+            permissionDescription: permission?.description,
+            permissionActionIds: permission?.actions.map { $0.id }.joined(separator: "\u{1F}")
         )
     }
+
+#if DEBUG
+    private static func assertDismissalBehavior() {
+        func presentation(status: SessionStatus = .running, activityId: String? = "event-1", permissionId: String? = nil) -> SessionPresentation {
+            SessionPresentation(
+                status: status,
+                sessionTitle: "Session",
+                sessionSubtitle: nil,
+                activityId: activityId,
+                activityTitle: "Editing",
+                activitySubtitle: nil,
+                permissionRequestId: permissionId,
+                permissionTitle: nil,
+                permissionDescription: nil,
+                permissionActionIds: nil
+            )
+        }
+        let dismissed = presentation()
+        assert(dismissed == presentation())
+        assert(dismissed != presentation(status: .review))
+        assert(dismissed != presentation(activityId: "event-2"))
+        assert(dismissed != presentation(activityId: nil, permissionId: "permission-1"))
+    }
+#endif
 
     @objc private func showPet() { petWindow.orderFront(nil); messagePanel.showWithPet() }
     @objc private func hidePet() { petWindow.orderOut(nil); messagePanel.hideWithPet() }

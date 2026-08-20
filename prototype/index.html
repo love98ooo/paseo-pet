@@ -1,0 +1,1032 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Codex Pet · 交互原型</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --ink: #171717;
+      --muted: #686868;
+      --line: #00000012;
+      --material: #ffffffe6;
+      --material-strong: #fffffff2;
+      --panel: #f7f7f8ed;
+      --shadow: 0 3px 16px #0000001f, inset 0 1px #ffffffb8;
+      --blue: #2679ff;
+      --orange: #e98b18;
+      --red: #e25454;
+      --green: #30a46c;
+      --ready: #63d17f;
+      --ready-soft: color(display-p3 .149 .749 .302 / .18);
+      --ready-icon: #00a116;
+    }
+
+    * { box-sizing: border-box; }
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 20% 15%, #b7d5ff 0, transparent 29%),
+        radial-gradient(circle at 82% 80%, #e9c9ff 0, transparent 31%),
+        #dce1e8;
+    }
+
+    .app {
+      width: min(1120px, calc(100% - 32px));
+      min-height: 100vh;
+      margin: auto;
+      display: grid;
+      grid-template-columns: minmax(500px, 1fr) 330px;
+      gap: 24px;
+      align-items: center;
+      padding: 28px 0;
+    }
+
+    .demo, .lab {
+      min-width: 0;
+      border: 1px solid #ffffff7d;
+      box-shadow: 0 24px 70px #3440522b;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+    }
+
+    .demo {
+      min-height: 670px;
+      border-radius: 28px;
+      padding: 22px;
+      background: #ffffff45;
+    }
+
+    .eyebrow {
+      margin: 0 0 5px;
+      color: #30343a99;
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, p { margin-top: 0; }
+    h1 { margin-bottom: 4px; font-size: 24px; letter-spacing: -.035em; }
+    .subtitle { margin-bottom: 18px; color: #414751aa; font-size: 13px; }
+
+    .desktop {
+      min-width: 0;
+      min-height: 530px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid #ffffff9e;
+      border-radius: 22px;
+      background:
+        linear-gradient(135deg, #9fc4db88, #a29cc38c),
+        radial-gradient(circle at 65% 35%, #f9d4b2a8, transparent 35%),
+        #9cabbc;
+      box-shadow: inset 0 1px #ffffffa8, inset 0 0 70px #33455c2e;
+    }
+
+    .overlay {
+      position: relative;
+      width: min(384px, 100%);
+      height: 400px;
+      isolation: isolate;
+      border-radius: 28px;
+      outline: 1px dashed #ffffff00;
+      transition: outline-color .2s ease;
+    }
+
+    .overlay:hover { outline-color: #ffffff45; }
+
+    .stack-shell {
+      position: absolute;
+      z-index: 4;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      width: 315px;
+      max-width: calc(100% - 20px);
+      margin-inline: auto;
+      translate: var(--attach-x, 0px) var(--attach-y, 0px);
+      transition: opacity .18s ease, transform .18s ease;
+    }
+
+    .stack-shell[hidden] { display: block; opacity: 0; pointer-events: none; transform: translateY(7px) scale(.98); }
+
+    .activity-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .activity-stack.show-all {
+      max-height: 300px;
+      overflow: auto;
+      padding: 1px 2px 6px;
+    }
+
+    .activity-card {
+      position: relative;
+      height: 54px;
+      min-height: 54px;
+      overflow: visible;
+      border: 1px solid #ffffffb8;
+      border-radius: 27px;
+      background: var(--material);
+      box-shadow: 0 9px 20px #0002, inset 0 1px 1px #fff9, inset 0 -1px 2px #fff3;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      transition: margin .22s ease, transform .22s ease, border-radius .22s ease;
+    }
+
+    .activity-stack:not(:hover):not(:focus-within) .activity-card:nth-child(2) { margin-top: -52px; transform: scale(.94); }
+    .activity-stack:not(:hover):not(:focus-within) .activity-card:nth-child(3) { margin-top: -52px; transform: scale(.86); }
+
+    .activity-card.expanded { height: auto; border-radius: 18px; }
+
+    .card-row {
+      height: 52px;
+      padding: 10px 22px;
+    }
+
+    .card-copy {
+      width: 100%;
+      height: 32px;
+      display: block;
+      min-width: 0;
+      border: 0;
+      padding: 0;
+      text-align: left;
+      background: transparent;
+      cursor: pointer;
+      transition: mask-image .15s ease;
+    }
+
+    .card-title, .card-subtitle {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .card-title { font-size: 13px; font-weight: 720; line-height: 17px; }
+    .card-subtitle { color: var(--muted); font-size: 13px; line-height: 15px; }
+
+    .card-close, .card-control, .ready-indicator {
+      position: absolute;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      padding: 0;
+      cursor: pointer;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+
+    .card-close {
+      z-index: 3;
+      top: -4px;
+      left: -4px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      color: var(--muted);
+      background: var(--material-strong);
+      box-shadow: 0 2px 7px #0002;
+      font-size: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .card-close::before,
+    .card-close::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 9px;
+      height: 1.5px;
+      border-radius: 2px;
+      background: currentColor;
+    }
+
+    .card-close::before { transform: translate(-50%, -50%) rotate(45deg); }
+    .card-close::after { transform: translate(-50%, -50%) rotate(-45deg); }
+
+    .hover-controls {
+      position: absolute;
+      z-index: 2;
+      top: 10px;
+      right: 12px;
+      display: flex;
+      gap: 8px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .card-control {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      color: var(--muted);
+      background: #72727233;
+      box-shadow: none;
+    }
+
+    .hover-controls .card-control { position: static; flex: 0 0 32px; }
+
+    .card-control svg { width: 19px; height: 19px; }
+    .stop-icon { width: 13px; height: 13px; border-radius: 2px; background: currentColor; }
+
+    .ready-indicator {
+      z-index: 2;
+      top: 12px;
+      right: 13px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      color: var(--ready-icon);
+      border-color: transparent;
+      background: var(--ready-soft);
+      box-shadow: none;
+    }
+
+    .ready-indicator svg, .complete-control svg { width: 18px; height: 18px; }
+
+    .review .complete-control { color: var(--ready-icon); border-color: transparent; background: var(--ready-soft); }
+
+    .activity-card:hover .card-close,
+    .activity-card:focus-within .card-close,
+    .activity-card:hover .hover-controls,
+    .activity-card:focus-within .hover-controls {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .activity-card.review:hover .ready-indicator,
+    .activity-card.review:focus-within .ready-indicator { opacity: 0; pointer-events: none; }
+
+    .activity-card:hover .card-copy,
+    .activity-card:focus-within .card-copy {
+      -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 84px), transparent 100%);
+      mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 84px), transparent 100%);
+    }
+
+    .activity-card.review:not(:hover):not(:focus-within) .card-copy {
+      -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 38px), transparent 100%);
+      mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 38px), transparent 100%);
+    }
+
+    .card-detail {
+      display: none;
+      padding: 0 18px 13px 22px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .expanded .card-detail { display: block; }
+    .card-detail p { margin: 0 0 10px; }
+    .actions { display: flex; justify-content: flex-end; gap: 7px; }
+
+    .action {
+      min-width: 58px;
+      height: 28px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      padding: 0 10px;
+      background: #ffffff8f;
+      cursor: pointer;
+    }
+
+    .action.primary { color: #fff; border-color: transparent; background: var(--blue); }
+    .action.danger { color: var(--red); }
+
+    .more-count {
+      position: absolute;
+      top: -8px;
+      right: 10px;
+      z-index: 8;
+      height: 20px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0 7px;
+      color: var(--muted);
+      background: var(--material-strong);
+      box-shadow: 0 2px 7px #0002;
+      font-size: 10px;
+    }
+
+    .pet {
+      position: absolute;
+      z-index: 3;
+      width: 154px;
+      height: 166px;
+      touch-action: none;
+      cursor: grab;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: top .22s ease;
+    }
+
+    .pet.dragging { cursor: grabbing; transition: none; }
+
+    .sprite {
+      width: 192px;
+      height: 208px;
+      transform: scale(.8);
+      transform-origin: top left;
+      background-image: url("./capoo.webp");
+      background-repeat: no-repeat;
+      background-size: 1536px 1872px;
+      image-rendering: pixelated;
+      pointer-events: none;
+      filter: drop-shadow(0 8px 6px #25364b28);
+    }
+
+    .sprite[data-state="idle"] { background-position-y: 0; animation: frames6 1.1s steps(6) infinite; }
+    .sprite[data-state="run-right"] { background-position-y: -208px; animation: frames8 .82s steps(8) infinite; }
+    .sprite[data-state="run-left"] { background-position-y: -416px; animation: frames8 .82s steps(8) infinite; }
+    .sprite[data-state="waving"] { background-position-y: -624px; animation: frames4 .82s steps(4) infinite; }
+    .sprite[data-state="jumping"] { background-position-y: -832px; animation: frames5 .9s steps(5) infinite; }
+    .sprite[data-state="failed"] { background-position-y: -1040px; animation: frames8 1.18s steps(8) infinite; }
+    .sprite[data-state="waiting"] { background-position-y: -1248px; animation: frames6 1.12s steps(6) infinite; }
+    .sprite[data-state="running"] { background-position-y: -1456px; animation: frames6 .78s steps(6) infinite; }
+    .sprite[data-state="review"] { background-position-y: -1664px; animation: frames6 1.05s steps(6) infinite; }
+
+    .badge {
+      position: absolute;
+      z-index: 3;
+      left: 50%;
+      bottom: -8px;
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      padding: 0;
+      color: #555;
+      background: #ffffffe6;
+      box-shadow: 0 3px 10px #0003, inset 0 1px #ffffff82;
+      transform: translateX(-50%);
+      cursor: pointer;
+    }
+
+    .badge.chevron { font-size: 0; }
+    .badge.chevron::before {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 7px;
+      height: 7px;
+      border-right: 1.75px solid currentColor;
+      border-bottom: 1.75px solid currentColor;
+      transform: translate(-50%, -66%) rotate(45deg);
+    }
+
+    .badge.completed { color: #15251b; border-color: #ffffff66; background: var(--ready); }
+    .badge[hidden] { display: none; }
+
+    .quick-chat {
+      position: absolute;
+      z-index: 5;
+      left: 6px;
+      right: 6px;
+      bottom: 6px;
+      width: 344px;
+      max-width: calc(100% - 12px);
+      margin-inline: auto;
+      height: 40px;
+      display: grid;
+      grid-template-columns: 1fr 30px;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 0 5px 0 14px;
+      background: var(--material);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      translate: var(--attach-x, 0px) var(--attach-y, 0px);
+    }
+
+    .quick-chat[hidden] { display: none; }
+    .quick-chat:focus-within { background: var(--material-strong); }
+    .quick-chat input { min-width: 0; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 13px; }
+    .quick-chat input::placeholder { color: var(--muted); }
+    .quick-chat button { width: 30px; height: 30px; border: 0; border-radius: 50%; color: #fff; background: #202124; cursor: pointer; }
+
+    .stage-note { margin: 14px 2px 0; color: #3b414a99; font-size: 11px; text-align: center; }
+
+    .lab {
+      border-radius: 24px;
+      padding: 20px;
+      background: var(--panel);
+    }
+
+    .lab h2 { margin-bottom: 4px; font-size: 18px; letter-spacing: -.025em; }
+    .lab-intro { margin-bottom: 18px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .section { padding: 15px 0; border-top: 1px solid var(--line); }
+    .section-title { margin: 0 0 10px; color: var(--muted); font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+
+    .session-target {
+      width: 100%;
+      height: 36px;
+      margin-bottom: 8px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0 10px;
+      color: var(--ink);
+      background: #ffffff8c;
+    }
+
+    .event-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .event-button, .secondary-button {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0 10px;
+      text-align: left;
+      background: #ffffff8c;
+      cursor: pointer;
+    }
+
+    .event-button:hover, .secondary-button:hover { background: #fff; }
+    .event-button small { display: block; margin-top: 1px; color: var(--muted); font-size: 9px; }
+    .event-button[data-status="waiting"] { border-left: 3px solid var(--orange); }
+    .event-button[data-status="failed"] { border-left: 3px solid var(--red); }
+    .event-button[data-status="review"] { border-left: 3px solid var(--green); }
+    .event-button[data-status="running"] { border-left: 3px solid var(--blue); }
+
+    .lab-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 8px; }
+    .secondary-button { text-align: center; font-size: 12px; }
+
+    .toggle { display: flex; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 12px; }
+
+    details { color: var(--muted); font-size: 12px; }
+    summary { color: var(--ink); cursor: pointer; font-weight: 650; }
+    details ul { margin: 10px 0 0; padding-left: 17px; line-height: 1.6; }
+
+    .log {
+      height: 118px;
+      margin: 0;
+      padding: 0;
+      overflow: auto;
+      list-style: none;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      line-height: 1.55;
+    }
+
+    .log li + li { margin-top: 4px; }
+    .log time { color: #909090; }
+
+    @keyframes frames4 { to { background-position-x: -768px; } }
+    @keyframes frames5 { to { background-position-x: -960px; } }
+    @keyframes frames6 { to { background-position-x: -1152px; } }
+    @keyframes frames8 { to { background-position-x: -1536px; } }
+
+    .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after {
+      scroll-behavior: auto !important;
+      animation-duration: .001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .001ms !important;
+    }
+
+    .reduce-motion .sprite { background-position-x: 0 !important; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+      .sprite { background-position-x: 0 !important; }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f4f4f4;
+        --muted: #aaa;
+        --line: #ffffff18;
+        --material: #202020e6;
+        --material-strong: #2b2b2bf2;
+        --panel: #202124ed;
+        --shadow: 0 3px 16px #0000004f, inset 0 1px #ffffff16;
+      }
+      body { background: radial-gradient(circle at 15% 10%, #294d70, transparent 32%), radial-gradient(circle at 80% 82%, #49335d, transparent 32%), #181a1f; }
+      .demo { background: #ffffff0a; }
+      .desktop { border-color: #ffffff20; background: linear-gradient(135deg, #233b4e, #403953); }
+      .event-button, .secondary-button, .action, .session-target { background: #ffffff0c; }
+      .event-button:hover, .secondary-button:hover { background: #ffffff16; }
+      .quick-chat button { color: #191919; background: #f4f4f4; }
+    }
+
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; width: min(620px, calc(100% - 20px)); }
+      .demo { min-height: 620px; }
+      .lab { margin-bottom: 20px; }
+    }
+
+    @media (max-width: 480px) {
+      .demo { padding: 14px 8px; border-radius: 18px; }
+      .desktop { width: 100%; border-radius: 16px; }
+      .overlay { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="demo" aria-labelledby="prototype-title">
+      <p class="eyebrow">Screenshot-calibrated overlay</p>
+      <h1 id="prototype-title">Codex Pet 悬浮层原型</h1>
+      <p class="subtitle">Message / Badge 按真实截图校准；Quick Chat 保留源码逆向规格（source-derived）。</p>
+
+      <div class="desktop">
+        <div class="overlay" id="overlay">
+          <div class="stack-shell" id="stackShell">
+            <div class="activity-stack" id="activityStack" aria-live="polite"></div>
+            <button class="more-count" id="moreCount" type="button" hidden></button>
+          </div>
+
+          <div class="pet" id="pet" style="left:115px; top:72px" tabindex="0" aria-label="可拖拽的 Codex Pet">
+            <button class="badge" id="badge" type="button" aria-label="切换活动列表"></button>
+            <div class="sprite" id="sprite" data-state="idle" aria-hidden="true"></div>
+          </div>
+
+          <form class="quick-chat" id="quickChat" hidden>
+            <input id="quickChatInput" autocomplete="off" maxlength="120" placeholder="Ask Codex…" aria-label="Quick Chat 输入">
+            <button type="submit" aria-label="发送">↑</button>
+          </form>
+        </div>
+      </div>
+      <p class="stage-note">Message / Badge: screenshot-calibrated · Quick Chat: source-derived · 消息会随宠物位置自动上下避让。</p>
+    </section>
+
+    <aside class="lab" aria-labelledby="lab-title">
+      <p class="eyebrow">Session playground</p>
+      <h2 id="lab-title">Session / 事件实验台</h2>
+      <p class="lab-intro">一张卡代表一个 Session；事件只更新所选 Session 的最新活动，不会创建另一张事件卡。</p>
+
+      <section class="section">
+        <p class="section-title">向目标 Session 注入事件</p>
+        <select class="session-target" id="targetSession" aria-label="目标 Session"></select>
+        <div class="event-grid">
+          <button class="event-button" type="button" data-event="thinking" data-status="running">Thinking<small>正在推理</small></button>
+          <button class="event-button" type="button" data-event="editing" data-status="running">Editing files<small>正在修改文件</small></button>
+          <button class="event-button" type="button" data-event="waiting" data-status="waiting">Needs input<small>等待授权</small></button>
+          <button class="event-button" type="button" data-event="failed" data-status="failed">Blocked<small>任务阻塞</small></button>
+          <button class="event-button" type="button" data-event="review" data-status="review">Ready<small>等待审阅</small></button>
+        </div>
+        <div class="lab-actions">
+          <button class="secondary-button" id="addSession" type="button">＋ 新增 Session</button>
+          <button class="secondary-button" id="reset" type="button">重置</button>
+        </div>
+        <label class="toggle"><input id="reduceMotion" type="checkbox"> Reduce motion</label>
+      </section>
+
+      <section class="section">
+        <details open>
+          <summary>逆向要点</summary>
+          <ul>
+            <li>截图校准：消息卡按文案动态为 200–315×54，圆角 27px。</li>
+            <li>卡片对应 Session；Thinking / Editing files / Ready 只是其最新事件摘要。</li>
+            <li>通知可隐藏但 Session 保留；后续事件会让同一张卡重新出现。</li>
+            <li>全部 Session 的最高优先级驱动宠物：Waiting &gt; Failed &gt; Review &gt; Running。</li>
+            <li>Quick Chat 的 344×40 尺寸来自源码逆向，不作为本轮截图校准结论。</li>
+          </ul>
+        </details>
+      </section>
+
+      <section class="section">
+        <p class="section-title">事件日志</p>
+        <ol class="log" id="eventLog" aria-live="polite"></ol>
+      </section>
+    </aside>
+  </main>
+
+  <script>
+    const eventTemplates = {
+      thinking: { status: "running", latestActivity: "Thinking", body: "Codex is producing an answer.", permission: null },
+      editing: { status: "running", latestActivity: "Editing files · PetMessagePanel.swift", body: "Codex is editing project files.", permission: null },
+      waiting: { status: "waiting", latestActivity: "Needs input", body: "Codex wants to run: npm run build", permission: { command: "npm run build" } },
+      failed: { status: "failed", latestActivity: "Blocked", body: "The command stopped before it could finish.", permission: null },
+      review: { status: "review", latestActivity: "Ready", body: "The answer is ready to review.", permission: null }
+    };
+
+    const priority = { waiting: 4, failed: 3, review: 2, running: 1 };
+    const petStates = { waiting: "waiting", failed: "failed", review: "review", running: "running" };
+    const initialSessions = [{
+      id: "session-1",
+      title: "询问选择 A 还是 B",
+      ...eventTemplates.thinking,
+      noticeVisible: true
+    }];
+    const measureContext = document.createElement("canvas").getContext("2d");
+    const replyIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 7 5 12l5 5M5 12h7c4.5 0 7 2.5 7 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    const checkIcon = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.5 12.5 4 4 7-9" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    const stopIcon = `<span class="stop-icon" aria-hidden="true"></span>`;
+
+    const stack = document.querySelector("#activityStack");
+    const stackShell = document.querySelector("#stackShell");
+    const moreCount = document.querySelector("#moreCount");
+    const pet = document.querySelector("#pet");
+    const sprite = document.querySelector("#sprite");
+    const badge = document.querySelector("#badge");
+    const quickChat = document.querySelector("#quickChat");
+    const quickChatInput = document.querySelector("#quickChatInput");
+    const eventLog = document.querySelector("#eventLog");
+    const overlay = document.querySelector("#overlay");
+    const reduceMotion = document.querySelector("#reduceMotion");
+    const targetSession = document.querySelector("#targetSession");
+
+    let sessions = initialSessions.map(session => ({ ...session }));
+    let expanded = new Set();
+    let stackVisible = true;
+    let showAll = false;
+    let hovering = false;
+    let dragging = false;
+    let petPinned = false;
+    let dragState = null;
+    let sessionSequence = 2;
+    const attachmentGap = 8;
+    let surfaceOffsets = { stack: { x: 0, y: 0 }, chat: { x: 0, y: 0 } };
+
+    function updateSessionEvent(list, id, nextEvent) {
+      if (!list.some(session => session.id === id)) return list;
+      return list.map(session => session.id === id
+        ? { ...session, ...nextEvent, noticeVisible: true }
+        : session);
+    }
+
+    function hideSessionNotification(list, id) {
+      return list.map(session => session.id === id ? { ...session, noticeVisible: false } : session);
+    }
+
+    function highestPriority(list) {
+      return list.reduce((best, session) => !best || priority[session.status] > priority[best.status] ? session : best, null);
+    }
+
+    function sortByPriority(list) {
+      return list.map((session, index) => ({ session, index }))
+        .sort((a, b) => (priority[b.session.status] - priority[a.session.status]) || (a.index - b.index))
+        .map(entry => entry.session);
+    }
+
+    function cardWidthFromTextWidth(width) {
+      return clamp(Math.ceil(width + 40), 200, 315);
+    }
+
+    function cardWidth(session) {
+      measureContext.font = '720 13px Inter, -apple-system, "Segoe UI", sans-serif';
+      const titleWidth = measureContext.measureText(session.title).width;
+      measureContext.font = '400 13px Inter, -apple-system, "Segoe UI", sans-serif';
+      const trailingAccessory = session.status === "review" || session.status === "failed" ? 45 : 0;
+      return cardWidthFromTextWidth(Math.max(titleWidth, measureContext.measureText(session.latestActivity).width) + trailingAccessory);
+    }
+
+    function escapeHTML(value) {
+      return String(value).replace(/[&<>"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" })[char]);
+    }
+
+    function log(message) {
+      const item = document.createElement("li");
+      item.innerHTML = `<time>${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time> ${escapeHTML(message)}`;
+      eventLog.prepend(item);
+      while (eventLog.children.length > 8) eventLog.lastElementChild.remove();
+    }
+
+    function injectEvent(sessionId, nextEvent, message = `${sessionId} ← ${nextEvent.latestActivity}`) {
+      const nextSessions = updateSessionEvent(sessions, sessionId, nextEvent);
+      if (nextSessions === sessions) return;
+      sessions = nextSessions;
+      if (nextEvent.status !== "waiting") expanded.delete(sessionId);
+      log(`${message}；Session 数量仍为 ${sessions.length}`);
+      render();
+    }
+
+    function renderPet() {
+      if (dragging && dragState) sprite.dataset.state = dragState;
+      else if (hovering) sprite.dataset.state = "jumping";
+      else sprite.dataset.state = petStates[highestPriority(sessions)?.status] || "idle";
+    }
+
+    function actionButtons(session) {
+      if (session.status === "waiting" && session.permission) return `<button class="action danger" data-action="deny" data-id="${escapeHTML(session.id)}">Deny</button><button class="action primary" data-action="allow" data-id="${escapeHTML(session.id)}">Allow</button>`;
+      return "";
+    }
+
+    function renderSessionSelector() {
+      const selected = targetSession.value || sessions[0]?.id;
+      targetSession.innerHTML = sessions.map(session =>
+        `<option value="${escapeHTML(session.id)}">${escapeHTML(session.title)} · ${escapeHTML(session.id)}</option>`
+      ).join("");
+      targetSession.value = sessions.some(session => session.id === selected) ? selected : sessions[0]?.id || "";
+    }
+
+    function render() {
+      renderSessionSelector();
+      const notifications = sessions.filter(session => session.noticeVisible);
+      stackShell.hidden = !stackVisible || notifications.length === 0;
+      if (notifications.length <= 3) showAll = false;
+      const ordered = sortByPriority(notifications);
+      const visible = showAll ? ordered : ordered.slice(0, 3);
+      stack.classList.toggle("show-all", showAll);
+      stack.innerHTML = visible.map((session, index) => `
+        <article class="activity-card ${session.status} ${expanded.has(session.id) ? "expanded" : ""}" style="width:${cardWidth(session)}px; z-index:${visible.length - index}">
+          <button class="card-close" type="button" data-dismiss="${escapeHTML(session.id)}" aria-label="隐藏通知">×</button>
+          <div class="card-row">
+            <button class="card-copy" type="button" data-card="${escapeHTML(session.id)}" aria-expanded="${expanded.has(session.id)}">
+              <span class="card-title">${escapeHTML(session.title)}</span>
+              <span class="card-subtitle">${escapeHTML(session.latestActivity)}</span>
+            </button>
+            ${session.status === "review" ? `<button class="ready-indicator" type="button" data-action="complete" data-id="${escapeHTML(session.id)}" aria-label="标记已读">${checkIcon}</button>` : ""}
+            <span class="hover-controls">
+              <button class="card-control reply-control" type="button" data-action="reply" data-id="${escapeHTML(session.id)}" aria-label="Reply">${replyIcon}</button>
+              ${session.status === "review" ? `<button class="card-control complete-control" type="button" data-action="complete" data-id="${escapeHTML(session.id)}" aria-label="标记已读">${checkIcon}</button>` : session.status === "running" ? `<button class="card-control" type="button" data-action="stop" data-id="${escapeHTML(session.id)}" aria-label="停止">${stopIcon}</button>` : ""}
+            </span>
+          </div>
+          <div class="card-detail"><p>${escapeHTML(session.body)}</p><div class="actions">${actionButtons(session)}</div></div>
+        </article>`).join("");
+
+      const hiddenCount = Math.max(0, notifications.length - visible.length);
+      moreCount.hidden = notifications.length <= 3;
+      moreCount.textContent = showAll ? "收起" : `+${hiddenCount} more`;
+
+      const activeNotice = highestPriority(notifications);
+      badge.hidden = !activeNotice;
+      badge.className = `badge ${stackVisible ? "chevron" : activeNotice?.status === "review" ? "completed" : ""}`;
+      badge.textContent = stackVisible ? "" : notifications.length;
+      badge.title = stackVisible ? "收起 Session 通知" : `展开 ${notifications.length} 个 Session 通知`;
+      if (!petPinned && !dragging) pet.style.top = notifications.length <= 1 && expanded.size === 0 ? "72px" : "210px";
+      renderPet();
+      constrainSurfaces();
+    }
+
+    document.querySelectorAll("[data-event]").forEach(button => button.addEventListener("click", () => {
+      const sessionId = targetSession.value;
+      const eventName = button.dataset.event;
+      injectEvent(sessionId, eventTemplates[eventName], `${eventName} 事件更新 ${sessionId}`);
+    }));
+
+    function hideNotification(id, reason) {
+      sessions = hideSessionNotification(sessions, id);
+      expanded.delete(id);
+      log(`${id} 通知${reason}；Session 保留`);
+      render();
+    }
+
+    stack.addEventListener("click", event => {
+      const card = event.target.closest("[data-card]");
+      const dismiss = event.target.closest("[data-dismiss]");
+      const action = event.target.closest("[data-action]");
+
+      if (dismiss) {
+        hideNotification(dismiss.dataset.dismiss, "已隐藏");
+      } else if (action) {
+        const current = sessions.find(session => session.id === action.dataset.id);
+        if (!current) return;
+        if (action.dataset.action === "allow") injectEvent(current.id, eventTemplates.thinking, `${current.id} permission allowed → running`);
+        if (action.dataset.action === "deny") injectEvent(current.id, { ...eventTemplates.failed, latestActivity: "Permission denied" }, `${current.id} permission denied → failed`);
+        if (action.dataset.action === "stop") injectEvent(current.id, { ...eventTemplates.failed, latestActivity: "Stopped by user" }, `${current.id} stopped → failed`);
+        if (action.dataset.action === "complete") hideNotification(current.id, "已读隐藏");
+        if (action.dataset.action === "reply") {
+          quickChat.hidden = false;
+          constrainSurfaces();
+          quickChatInput.focus();
+          targetSession.value = current.id;
+          log(`${current.id} reply opened；仍是同一 Session`);
+        }
+      } else if (card) {
+        const current = sessions.find(session => session.id === card.dataset.card);
+        if (!current) return;
+        if (current.status === "waiting") {
+          expanded.has(current.id) ? expanded.delete(current.id) : expanded.add(current.id);
+          log(`${current.id} permission ${expanded.has(current.id) ? "expanded" : "collapsed"}`);
+          render();
+        } else if (current.status === "review") {
+          hideNotification(current.id, "已读隐藏");
+        } else {
+          log(`${current.id} opened；running/failed 通知未删除`);
+        }
+      }
+    });
+
+    stack.addEventListener("transitionend", event => {
+      if (event.target.classList.contains("activity-card")) constrainSurfaces();
+    });
+
+    document.querySelector("#addSession").addEventListener("click", () => {
+      const number = sessionSequence++;
+      const id = `session-${number}`;
+      sessions = [{ id, title: `并行 Session ${number}`, ...eventTemplates.editing, noticeVisible: true }, ...sessions];
+      log(`${id} 新建；这是唯一新增卡片的实验台操作`);
+      render();
+      targetSession.value = id;
+    });
+
+    document.querySelector("#reset").addEventListener("click", () => {
+      sessions = initialSessions.map(session => ({ ...session }));
+      expanded.clear();
+      stackVisible = true;
+      showAll = false;
+      sessionSequence = 2;
+      quickChat.hidden = true;
+      quickChatInput.value = "";
+      reduceMotion.checked = false;
+      document.body.classList.remove("reduce-motion");
+      pet.style.left = "115px";
+      pet.style.top = "72px";
+      petPinned = false;
+      surfaceOffsets = { stack: { x: 0, y: 0 }, chat: { x: 0, y: 0 } };
+      applySurfaceOffsets();
+      log("prototype reset");
+      render();
+    });
+
+    moreCount.addEventListener("click", () => {
+      showAll = !showAll;
+      log(showAll ? "all Session notifications shown" : "Session notifications collapsed");
+      render();
+    });
+
+    function toggleActivityStack() {
+      stackVisible = !stackVisible;
+      log(stackVisible ? "Session cards shown" : "Session cards hidden");
+      render();
+    }
+
+    badge.addEventListener("click", toggleActivityStack);
+
+    quickChat.addEventListener("submit", event => {
+      event.preventDefault();
+      const prompt = quickChatInput.value.trim();
+      if (!prompt) return;
+      injectEvent(targetSession.value, { ...eventTemplates.thinking, latestActivity: `Quick Chat · ${prompt}`, body: `Processing: ${prompt}` }, `Quick Chat 更新 ${targetSession.value}`);
+      quickChatInput.value = "";
+    });
+
+    reduceMotion.addEventListener("change", event => {
+      document.body.classList.toggle("reduce-motion", event.target.checked);
+      log(`reduce motion ${event.target.checked ? "on" : "off"}`);
+    });
+
+    pet.addEventListener("pointerenter", () => { hovering = true; renderPet(); });
+    pet.addEventListener("pointerleave", () => { hovering = false; renderPet(); });
+    pet.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        hovering = true;
+        renderPet();
+        setTimeout(() => { hovering = false; renderPet(); }, 500);
+      }
+    });
+
+    let dragOrigin;
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function surfaceBounds(element) {
+      if (!element.offsetWidth || !element.offsetHeight) return null;
+      const minX = -element.offsetLeft;
+      const maxX = overlay.clientWidth - element.offsetLeft - element.offsetWidth;
+      const minY = -element.offsetTop;
+      const maxY = overlay.clientHeight - element.offsetTop - element.offsetHeight;
+      return { minX, maxX: Math.max(minX, maxX), minY, maxY: Math.max(minY, maxY) };
+    }
+
+    function applySurfaceOffsets() {
+      [[stackShell, surfaceOffsets.stack], [quickChat, surfaceOffsets.chat]].forEach(([element, offset]) => {
+        element.style.setProperty("--attach-x", `${offset.x}px`);
+        element.style.setProperty("--attach-y", `${offset.y}px`);
+      });
+    }
+
+    function activityStackPlacement(petTop, petHeight, stackHeight, overlayHeight) {
+      const above = petTop - stackHeight - attachmentGap;
+      const below = petTop + petHeight + attachmentGap;
+      if (above >= 0) return { top: above, side: "above" };
+      if (below + stackHeight <= overlayHeight) return { top: below, side: "below" };
+      return petTop >= overlayHeight - petTop - petHeight
+        ? { top: above, side: "above" }
+        : { top: below, side: "below" };
+    }
+
+    function placeActivityStack() {
+      const bounds = surfaceBounds(stackShell);
+      if (!bounds) return;
+      const petLeft = parseFloat(pet.style.left) || 0;
+      const petTop = parseFloat(pet.style.top) || 0;
+      const placement = activityStackPlacement(petTop, pet.offsetHeight, stackShell.offsetHeight, overlay.clientHeight);
+      const left = petLeft + (pet.offsetWidth - stackShell.offsetWidth) / 2;
+      surfaceOffsets.stack = {
+        x: clamp(left - stackShell.offsetLeft, bounds.minX, bounds.maxX),
+        y: clamp(placement.top - stackShell.offsetTop, bounds.minY, bounds.maxY)
+      };
+      stackShell.dataset.side = placement.side;
+    }
+
+    function constrainSurfaces() {
+      placeActivityStack();
+      const bounds = surfaceBounds(quickChat);
+      if (bounds) {
+        surfaceOffsets.chat.x = clamp(surfaceOffsets.chat.x, bounds.minX, bounds.maxX);
+        surfaceOffsets.chat.y = clamp(surfaceOffsets.chat.y, bounds.minY, bounds.maxY);
+      }
+      applySurfaceOffsets();
+    }
+
+    function moveAttachedSurfaces(dx, dy) {
+      const start = dragOrigin.surfaces.chat;
+      const bounds = surfaceBounds(quickChat);
+      surfaceOffsets.chat = bounds
+        ? { x: clamp(start.x + dx, bounds.minX, bounds.maxX), y: clamp(start.y + dy, bounds.minY, bounds.maxY) }
+        : { x: start.x + dx, y: start.y + dy };
+      constrainSurfaces();
+    }
+
+    pet.addEventListener("pointerdown", event => {
+      if (event.target.closest("button")) return;
+      dragging = true;
+      petPinned = true;
+      pet.classList.add("dragging");
+      pet.setPointerCapture(event.pointerId);
+      dragOrigin = {
+        clientX: event.clientX,
+        clientY: event.clientY,
+        left: parseFloat(pet.style.left),
+        top: parseFloat(pet.style.top),
+        lastX: event.clientX,
+        surfaces: {
+          chat: { ...surfaceOffsets.chat }
+        }
+      };
+      log("pet drag started");
+    });
+
+    pet.addEventListener("pointermove", event => {
+      if (!dragging) return;
+      const dx = event.clientX - dragOrigin.clientX;
+      const dy = event.clientY - dragOrigin.clientY;
+      const stepX = event.clientX - dragOrigin.lastX;
+      dragState = stepX < -1 ? "run-left" : stepX > 1 ? "run-right" : dragState;
+      dragOrigin.lastX = event.clientX;
+      const nextLeft = clamp(dragOrigin.left + dx, 0, overlay.clientWidth - pet.offsetWidth);
+      const nextTop = clamp(dragOrigin.top + dy, 0, overlay.clientHeight - pet.offsetHeight);
+      pet.style.left = `${nextLeft}px`;
+      pet.style.top = `${nextTop}px`;
+      moveAttachedSurfaces(nextLeft - dragOrigin.left, nextTop - dragOrigin.top);
+      renderPet();
+    });
+
+    function endDrag(event) {
+      if (!dragging) return;
+      dragging = false;
+      dragState = null;
+      pet.classList.remove("dragging");
+      if (pet.hasPointerCapture(event.pointerId)) pet.releasePointerCapture(event.pointerId);
+      log("pet drag ended");
+      renderPet();
+    }
+
+    pet.addEventListener("pointerup", endDrag);
+    pet.addEventListener("pointercancel", endDrag);
+    window.addEventListener("resize", constrainSurfaces);
+
+    const checkSessions = [
+      { id: "a", title: "A", status: "running", latestActivity: "Thinking", noticeVisible: true },
+      { id: "b", title: "B", status: "failed", latestActivity: "Blocked", noticeVisible: true }
+    ];
+    const eventUpdated = updateSessionEvent(checkSessions, "a", eventTemplates.waiting);
+    const missingTarget = updateSessionEvent(checkSessions, "missing", eventTemplates.review);
+    const hiddenSession = hideSessionNotification(eventUpdated, "a");
+    const resurfacedSession = updateSessionEvent(hiddenSession, "a", eventTemplates.review);
+    const sorted = sortByPriority([{ id: "r1", status: "running" }, { id: "r2", status: "review" }, { id: "w", status: "waiting" }, { id: "r3", status: "running" }]);
+    const topPlacement = activityStackPlacement(0, 166, 54, 400);
+    const bottomPlacement = activityStackPlacement(234, 166, 54, 400);
+    console.assert(eventUpdated.length === 2 && missingTarget === checkSessions, "events must never create a Session");
+    console.assert(eventUpdated[0].status === "waiting" && eventUpdated[1] === checkSessions[1], "an event must update only its target Session");
+    console.assert(hiddenSession.length === 2 && hiddenSession[0].noticeVisible === false, "hiding a notification must preserve its Session");
+    console.assert(resurfacedSession[0].noticeVisible === true && resurfacedSession[0].status === "review", "the next event must reshow the same Session notification");
+    console.assert(highestPriority(eventUpdated).status === "waiting", "priority must be waiting > failed > review > running");
+    console.assert(sorted.map(session => session.id).join(",") === "w,r2,r1,r3", "Session notifications must use stable priority order");
+    console.assert(cardWidthFromTextWidth(40) === 200 && cardWidthFromTextWidth(400) === 315, "message width must clamp to 200–315px");
+    console.assert(topPlacement.side === "below" && topPlacement.top === 174, "top-edge pet must place messages below");
+    console.assert(bottomPlacement.side === "above" && bottomPlacement.top === 172, "lower pet must restore the 8px gap above");
+
+    log("prototype initialized：1 Session / 1 visible notification");
+    render();
+  </script>
+</body>
+</html>

@@ -8,13 +8,29 @@ A native macOS desktop companion for [Paseo](https://paseo.sh). It displays Code
 - Paseo desktop app or daemon running locally
 - A Codex pet installed under `~/.codex/pets/`
 
+## Install
+
+```bash
+./install.sh
+```
+
+This builds and installs `Paseo Pet.app` to `~/Applications`. To install in another directory, pass it as the first argument:
+
+```bash
+./install.sh /Applications
+```
+
+To update, pull the latest code and rerun the same install command.
+
+To start Paseo Pet automatically, add the installed app in **System Settings → General → Login Items**.
+
 ## Run
 
 ```bash
 swift run
 ```
 
-By default, Paseo Pet connects to `ws://localhost:6767/ws`. Configure a different port with `PASEO_PORT`. The daemon password can be stored from the menu bar or supplied through `PASEO_PASSWORD`.
+By default, Paseo Pet connects to `ws://localhost:6767/ws`. For terminal launches, configure a different port with `PASEO_PORT` or supply `PASEO_PASSWORD`. For normal app launches, store the daemon password from the menu bar; it is written to `~/Library/Application Support/PaseoPet/daemon-password` in a `0700` directory with `0600` file permissions.
 
 ## Features
 
