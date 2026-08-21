@@ -52,8 +52,9 @@ A non-activating transparent panel anchored above the pet. Its UI is adapted fro
 
 - Four visible messages; older messages remain in the active count
 - Stable thread IDs update bubbles in place
-- Expanded by default
-- 34px toggle collapses without deleting messages
+- Three explicit states: collapsed (1), stacked (2), and expanded (3)
+- The interaction button moves 1 → 2, 2 → 1, and 3 → 2; clicking a stacked message moves 2 → 3
+- Hover only reveals in-card actions and never changes the stack state
 - A collapsed stack stays hidden across updates while its badge and count continue to refresh
 - Session, activity, permission, first-awake, and expiration state share one panel
 
@@ -70,7 +71,7 @@ A compact text field below the pet. It sends to the most recently active Paseo a
 | running | running | working spinner |
 | pending permission | waiting | orange clock |
 | error | failed | red x |
-| requires attention | review | purple eye |
+| requires attention | review | green check |
 | idle / closed | idle | removed |
 
 Pet animation uses the highest-priority active session: waiting, failed, running, review, idle.

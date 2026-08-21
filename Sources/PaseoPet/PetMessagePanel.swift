@@ -71,6 +71,24 @@ enum PetBubbleIndicator: Equatable {
     }
 }
 
+enum MessageStackMode: Int {
+    case collapsed = 1
+    case stacked = 2
+    case expanded = 3
+
+    var afterInteractionButton: MessageStackMode {
+        self == .stacked ? .collapsed : .stacked
+    }
+
+#if DEBUG
+    static func assertInteractionButtonTransitions() {
+        assert(MessageStackMode.collapsed.afterInteractionButton == .stacked)
+        assert(MessageStackMode.stacked.afterInteractionButton == .collapsed)
+        assert(MessageStackMode.expanded.afterInteractionButton == .stacked)
+    }
+#endif
+}
+
 struct PetMessage: Identifiable {
     var id: String { threadId }
     let threadId: String
@@ -126,12 +144,13 @@ struct PetMessageStack {
 }
 
 struct OpenPetsMessageLayout: Equatable {
-    static let messageShadowOutset: CGFloat = 8
+    static let cardOutset: CGFloat = 4
     static let stackGap: CGFloat = 8
-    static let backplateReveal: CGFloat = 8
-    static let backplateWidthStep: CGFloat = 12
-    static let maxCardWidth: CGFloat = 315
-    static let closeButtonSize = CGSize(width: 20, height: 20)
+    static let backplateReveal: CGFloat = 5
+    static let backplateWidthStep: CGFloat = 10
+    static let stackedCardWidth: CGFloat = 270
+    static let expandedCardWidth: CGFloat = 270
+    static let cornerRadius: CGFloat = 27
     static let moreOutset: CGFloat = 4
     static let empty = OpenPetsMessageLayout(
         containerSize: .zero,
@@ -151,23 +170,29 @@ struct OpenPetsMessageLayout: Equatable {
     static func makeMessagePanel(
         messages: [PetMessage],
         activeCount: Int,
-        isCollapsed: Bool,
-        isExpanded: Bool,
+        mode: MessageStackMode,
         isBelowPet: Bool,
         messageAreaHeight: CGFloat
     ) -> OpenPetsMessageLayout {
-        guard !messages.isEmpty, !isCollapsed else { return .empty }
-        let renderedMessages = isExpanded ? messages : Array(messages.prefix(1))
+        guard !messages.isEmpty, mode != .collapsed else { return .empty }
+        let renderedMessages = mode == .expanded ? messages : Array(messages.prefix(1))
+        let presentation: OpenPetsBubbleContentView.Presentation = mode == .expanded ? .expanded : .stacked
+        let maxWidth = mode == .expanded ? expandedCardWidth : stackedCardWidth
         let bubbleSizes = renderedMessages.map {
-            OpenPetsBubbleContentView.size(for: $0.bubble, maxWidth: maxCardWidth, messageAreaHeight: messageAreaHeight)
+            OpenPetsBubbleContentView.size(
+                for: $0.bubble,
+                presentation: presentation,
+                maxWidth: maxWidth,
+                messageAreaHeight: messageAreaHeight
+            )
         }
         let width = bubbleSizes.map(\.width).max() ?? 0
 
-        if !isExpanded, let size = bubbleSizes.first {
+        if mode == .stacked, let size = bubbleSizes.first {
             let backplateCount = min(2, max(0, activeCount - 1))
             let frameSize = CGSize(
-                width: size.width + messageShadowOutset * 2,
-                height: size.height + messageShadowOutset * 2
+                width: size.width + cardOutset * 2,
+                height: size.height + cardOutset * 2
             )
             let depth = CGFloat(backplateCount) * backplateReveal
             let cardFrame = CGRect(
@@ -202,8 +227,8 @@ struct OpenPetsMessageLayout: Equatable {
             cardFrames.append(CGRect(
                 x: (width - size.width) / 2,
                 y: nextY,
-                width: size.width + messageShadowOutset * 2,
-                height: size.height + messageShadowOutset * 2
+                width: size.width + cardOutset * 2,
+                height: size.height + cardOutset * 2
             ))
             nextY += size.height + stackGap
         }
@@ -212,12 +237,12 @@ struct OpenPetsMessageLayout: Equatable {
             CGRect(x: $0.minX, y: height - $0.maxY, width: $0.width, height: $0.height)
         }
         return OpenPetsMessageLayout(
-            containerSize: CGSize(width: width + messageShadowOutset * 2, height: height),
+            containerSize: CGSize(width: width + cardOutset * 2, height: height),
             cardFrames: cardFrames,
             backplateFrames: [],
             moreFrame: nil,
             moreCount: 0
-        ).addingMore(count: max(0, activeCount - renderedMessages.count), isBelowPet: isBelowPet)
+        )
     }
 
     private func addingMore(count: Int, isBelowPet: Bool) -> OpenPetsMessageLayout {
@@ -254,11 +279,18 @@ struct OpenPetsMessageLayout: Equatable {
                 .sorted { $0.1.midY > $1.1.midY }
                 .map { $0.0.threadId }
         }
+        let collapsed = makeMessagePanel(
+            messages: messages,
+            activeCount: 5,
+            mode: .collapsed,
+            isBelowPet: false,
+            messageAreaHeight: 108
+        )
+        assert(collapsed == .empty)
         let compact = makeMessagePanel(
             messages: messages,
             activeCount: 5,
-            isCollapsed: false,
-            isExpanded: false,
+            mode: .stacked,
             isBelowPet: false,
             messageAreaHeight: 108
         )
@@ -269,8 +301,7 @@ struct OpenPetsMessageLayout: Equatable {
         let representedCompact = makeMessagePanel(
             messages: messages,
             activeCount: 3,
-            isCollapsed: false,
-            isExpanded: false,
+            mode: .stacked,
             isBelowPet: false,
             messageAreaHeight: 108
         )
@@ -279,8 +310,7 @@ struct OpenPetsMessageLayout: Equatable {
         let single = makeMessagePanel(
             messages: Array(messages.prefix(1)),
             activeCount: 1,
-            isCollapsed: false,
-            isExpanded: false,
+            mode: .stacked,
             isBelowPet: false,
             messageAreaHeight: 108
         )
@@ -290,30 +320,27 @@ struct OpenPetsMessageLayout: Equatable {
         let expanded = makeMessagePanel(
             messages: messages,
             activeCount: 5,
-            isCollapsed: false,
-            isExpanded: true,
+            mode: .expanded,
             isBelowPet: false,
             messageAreaHeight: 108
         )
         assert(expanded.cardFrames.count == messages.count)
         assert(expanded.backplateFrames.isEmpty)
-        assert(expanded.moreCount == 2)
-        assert(expanded.moreFrame != nil)
+        assert(expanded.moreCount == 0)
+        assert(expanded.moreFrame == nil)
         assert(visualOrder(in: compact).first == visualOrder(in: expanded).first)
         assert(visualOrder(in: expanded) == messages.map(\.threadId))
         let compactBelow = makeMessagePanel(
             messages: messages,
             activeCount: 3,
-            isCollapsed: false,
-            isExpanded: false,
+            mode: .stacked,
             isBelowPet: true,
             messageAreaHeight: 108
         )
         let expandedBelow = makeMessagePanel(
             messages: messages,
             activeCount: 3,
-            isCollapsed: false,
-            isExpanded: true,
+            mode: .expanded,
             isBelowPet: true,
             messageAreaHeight: 108
         )
@@ -330,23 +357,22 @@ final class PetMessagePanelView: NSView {
 
     private let messageAreaHeight: CGFloat
     private var messageStack = PetMessageStack()
-    private var isMessageStackCollapsed = false
-    private var isStackExpanded = false
-    private var stackCollapseItem: DispatchWorkItem?
+    private var stackMode: MessageStackMode = .stacked
     private var isBelowPet = false
     private var currentLayout = OpenPetsMessageLayout.empty
     private lazy var hostingView = PassThroughHostingView(rootView: makeRootView(messages: [], layout: .empty, animatesLayout: false))
 
     var hasMessages: Bool { messageStack.activeCount > 0 }
-    var showsMessageCards: Bool { hasMessages && !isMessageStackCollapsed }
+    var showsMessageCards: Bool { hasMessages && stackMode != .collapsed }
     var activeMessageCount: Int { messageStack.activeCount }
     var highestIndicator: PetBubbleIndicator { messageStack.visibleMessages(limit: 1).first?.bubble.indicator ?? .none }
-    var isCollapsed: Bool { isMessageStackCollapsed }
+    var mode: MessageStackMode { stackMode }
 
     init(petSize: CGSize, messageAreaHeight: CGFloat = 108) {
         self.messageAreaHeight = messageAreaHeight
         super.init(frame: .zero)
 #if DEBUG
+        MessageStackMode.assertInteractionButtonTransitions()
         PetMessageStack.assertPriorityOrdering()
         OpenPetsMessageLayout.assertStackingBehavior()
 #endif
@@ -355,6 +381,7 @@ final class PetMessagePanelView: NSView {
         addSubview(hostingView)
 #if DEBUG
         assertHiddenStateSurvivesBubbleUpdate()
+        assertStackModeBehavior()
 #endif
     }
 
@@ -377,7 +404,8 @@ final class PetMessagePanelView: NSView {
 
     func clearBubble(threadId: String) {
         messageStack.clearBubble(threadId: threadId)
-        if messageStack.activeCount < 2 { isStackExpanded = false }
+        if messageStack.activeCount < 2, stackMode == .expanded { stackMode = .stacked }
+        if messageStack.activeCount == 0 { stackMode = .stacked }
         relayoutMessages()
     }
 
@@ -386,8 +414,7 @@ final class PetMessagePanelView: NSView {
         currentLayout = OpenPetsMessageLayout.makeMessagePanel(
             messages: messages,
             activeCount: messageStack.activeCount,
-            isCollapsed: isMessageStackCollapsed,
-            isExpanded: isStackExpanded,
+            mode: stackMode,
             isBelowPet: isBelowPet,
             messageAreaHeight: messageAreaHeight
         )
@@ -401,50 +428,50 @@ final class PetMessagePanelView: NSView {
     }
 
     private func makeRootView(messages: [PetMessage], layout: OpenPetsMessageLayout, animatesLayout: Bool) -> OpenPetsMessageView {
-        OpenPetsMessageView(
+        let canExpand = stackMode == .stacked && messageStack.activeCount > 1
+        return OpenPetsMessageView(
             messages: messages,
             layout: layout,
+            mode: stackMode,
             messageAreaHeight: messageAreaHeight,
             animatesLayout: animatesLayout,
             onDismiss: { [weak self] in self?.onDismissMessage?($0) },
-            onHoverChanged: { [weak self] in self?.setStackHovered($0) }
+            onExpand: canExpand ? { [weak self] in self?.expandStack() } : nil
         )
     }
 
-    func toggleMessageStackCollapsed() {
+    func advanceStackModeFromInteractionButton() {
         guard messageStack.activeCount > 0 else { return }
-        isMessageStackCollapsed.toggle()
-        stackCollapseItem?.cancel()
-        isStackExpanded = false
+        stackMode = stackMode.afterInteractionButton
         relayoutMessages()
     }
 
-    private func setStackHovered(_ hovered: Bool) {
-        stackCollapseItem?.cancel()
-        guard messageStack.activeCount > 1, !isMessageStackCollapsed else { return }
-        if hovered {
-            guard !isStackExpanded else { return }
-            isStackExpanded = true
-            relayoutMessages()
-        } else if isStackExpanded {
-            let item = DispatchWorkItem { [weak self] in
-                guard let self, self.isStackExpanded else { return }
-                self.isStackExpanded = false
-                self.relayoutMessages()
-            }
-            stackCollapseItem = item
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: item)
-        }
+    private func expandStack() {
+        guard stackMode == .stacked, messageStack.activeCount > 1 else { return }
+        stackMode = .expanded
+        relayoutMessages()
     }
 
 #if DEBUG
     private func assertHiddenStateSurvivesBubbleUpdate() {
-        isMessageStackCollapsed = true
+        stackMode = .collapsed
         setBubble(PetBubble(title: "debug", indicator: .working), threadId: "debug-hidden")
-        assert(isMessageStackCollapsed && !showsMessageCards)
+        assert(stackMode == .collapsed && !showsMessageCards)
         messageStack.clearBubble(threadId: "debug-hidden")
-        isMessageStackCollapsed = false
+        stackMode = .stacked
         relayoutMessages(notifyWindow: false, animatesLayout: false)
+    }
+
+    private func assertStackModeBehavior() {
+        setBubble(PetBubble(title: "first", indicator: .working), threadId: "debug-first")
+        expandStack()
+        assert(stackMode == .stacked)
+        setBubble(PetBubble(title: "second", indicator: .working), threadId: "debug-second")
+        expandStack()
+        assert(stackMode == .expanded)
+        clearBubble(threadId: "debug-second")
+        assert(stackMode == .stacked)
+        clearBubble(threadId: "debug-first")
     }
 #endif
 }
@@ -453,8 +480,7 @@ private final class PassThroughHostingView: NSHostingView<OpenPetsMessageView> {
     var interactiveFrames: [CGRect] = []
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        let layoutPoint = isFlipped ? NSPoint(x: point.x, y: bounds.height - point.y) : point
-        guard interactiveFrames.contains(where: { $0.contains(layoutPoint) }) else { return nil }
+        guard interactiveFrames.contains(where: { $0.contains(point) }) else { return nil }
         return super.hitTest(point)
     }
 }
@@ -462,30 +488,43 @@ private final class PassThroughHostingView: NSHostingView<OpenPetsMessageView> {
 private struct OpenPetsMessageView: View {
     let messages: [PetMessage]
     let layout: OpenPetsMessageLayout
+    let mode: MessageStackMode
     let messageAreaHeight: CGFloat
     let animatesLayout: Bool
     let onDismiss: (String) -> Void
-    let onHoverChanged: (Bool) -> Void
+    let onExpand: (() -> Void)?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            ForEach(Array(layout.backplateFrames.enumerated()), id: \.offset) { _, frame in
+            ForEach(Array(layout.backplateFrames.enumerated()), id: \.offset) { level, frame in
                 Color.clear
                     .frame(
-                        width: frame.width - OpenPetsMessageLayout.messageShadowOutset * 2,
-                        height: frame.height - OpenPetsMessageLayout.messageShadowOutset * 2
+                        width: frame.width - OpenPetsMessageLayout.cardOutset * 2,
+                        height: frame.height - OpenPetsMessageLayout.cardOutset * 2
                     )
-                    .codexGlass(in: RoundedRectangle(cornerRadius: 27, style: .continuous), isDark: colorScheme == .dark)
-                    .padding(OpenPetsMessageLayout.messageShadowOutset)
+                    .codexGlass(
+                        in: RoundedRectangle(cornerRadius: OpenPetsMessageLayout.cornerRadius, style: .continuous),
+                        isDark: colorScheme == .dark
+                    )
+                    .opacity(level == 0 ? 0.56 : 0.78)
+                    .padding(OpenPetsMessageLayout.cardOutset)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onExpand?() }
                     .transition(.identity)
                     .position(position(for: frame))
             }
             ForEach(Array(zip(messages, layout.cardFrames)), id: \.0.threadId) { message, frame in
-                OpenPetsDismissibleBubbleView(message: message, messageAreaHeight: messageAreaHeight, onDismiss: onDismiss)
-                    .transition(.identity)
-                    .position(position(for: frame))
+                OpenPetsDismissibleBubbleView(
+                    message: message,
+                    presentation: mode == .expanded ? .expanded : .stacked,
+                    messageAreaHeight: messageAreaHeight,
+                    onDismiss: onDismiss,
+                    onTap: onExpand ?? { message.bubble.onActivate?() }
+                )
+                .transition(.identity)
+                .position(position(for: frame))
             }
             if let frame = layout.moreFrame, layout.moreCount > 0 {
                 Text("+\(layout.moreCount) more")
@@ -497,13 +536,14 @@ private struct OpenPetsMessageView: View {
                     )
                     .codexGlass(in: Capsule(), isDark: colorScheme == .dark)
                     .padding(OpenPetsMessageLayout.moreOutset)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onExpand?() }
                     .transition(.identity)
                     .position(position(for: frame))
             }
         }
         .frame(width: layout.containerSize.width, height: layout.containerSize.height, alignment: .topLeading)
         .animation(layoutAnimation, value: layout)
-        .onHover(perform: onHoverChanged)
     }
 
     private func position(for frame: CGRect) -> CGPoint {
@@ -520,119 +560,134 @@ private struct OpenPetsMessageView: View {
 
 private struct OpenPetsDismissibleBubbleView: View {
     let message: PetMessage
+    let presentation: OpenPetsBubbleContentView.Presentation
     let messageAreaHeight: CGFloat
     let onDismiss: (String) -> Void
+    let onTap: () -> Void
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
 
     var body: some View {
-        OpenPetsBubbleContentView(bubble: message.bubble, messageAreaHeight: messageAreaHeight, showsHoverActions: isHovered)
-            .padding(OpenPetsMessageLayout.messageShadowOutset)
-            .contentShape(RoundedRectangle(cornerRadius: 27, style: .continuous))
-            .onTapGesture { message.bubble.onActivate?() }
-            .overlay(alignment: .topLeading) {
-                if isHovered {
-                    Button { onDismiss(message.threadId) } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 20, height: 20, alignment: .center)
-                    }
-                    .buttonStyle(.plain)
-                    .codexGlass(in: Circle(), isDark: colorScheme == .dark)
-                    .offset(x: 2, y: 2)
-                    .transition(.offset(x: -6).combined(with: .opacity))
-                    .accessibilityLabel("Dismiss \(message.bubble.title)")
-                }
+        OpenPetsBubbleContentView(
+            bubble: message.bubble,
+            presentation: presentation,
+            messageAreaHeight: messageAreaHeight,
+            showsHoverActions: isHovered
+        )
+        .padding(OpenPetsMessageLayout.cardOutset)
+        .contentShape(RoundedRectangle(cornerRadius: OpenPetsMessageLayout.cornerRadius, style: .continuous))
+        .onTapGesture(perform: onTap)
+        .overlay(alignment: .topLeading) {
+            if isHovered {
+                OpenPetsHoverButton(
+                    symbol: "xmark",
+                    accessibilityLabel: "Dismiss \(message.bubble.title)",
+                    size: 20,
+                    action: { onDismiss(message.threadId) }
+                )
+                .offset(x: 2, y: 2)
+                .transition(.offset(x: -6).combined(with: .opacity))
             }
-            .contentShape(Rectangle())
-            .onHover { hovering in withAnimation(.easeOut(duration: 0.16)) { isHovered = hovering } }
+        }
+        .onHover { hovering in withAnimation(.easeOut(duration: 0.16)) { isHovered = hovering } }
     }
 }
 
 struct OpenPetsBubbleContentView: View {
+    enum Presentation { case stacked, expanded }
+
     let bubble: PetBubble
+    var presentation: Presentation = .stacked
     var messageAreaHeight: CGFloat = 108
     var showsHoverActions = true
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            bubbleContent
-            if !bubble.actionsRequireHover, !bubble.actions.isEmpty {
-                permissionActionRow(bubble.actions).padding(.trailing, 12).padding(.bottom, 7)
-            }
-        }
-        .frame(width: bubbleSize.width, height: bubbleSize.height)
-        .animation(.easeOut(duration: 0.16), value: showsHoverActions)
-    }
-
-    private var bubbleSize: CGSize { Self.size(for: bubble, messageAreaHeight: messageAreaHeight) }
-
-    private var bubbleContent: some View {
-        HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(bubble.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                if let detail = bubble.detail, !detail.isEmpty {
-                    Text(detail)
-                        .font(.system(size: 12.5))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(bubble.detailLineLimit)
-                        .truncationMode(.tail)
+        bubbleContent
+            .overlay(alignment: .trailing) {
+                if bubble.actionsRequireHover, showsHoverActions, hoverControlCount > 0 {
+                    hoverActionRow.padding(.trailing, 14)
                 }
             }
+            .overlay(alignment: .bottomTrailing) {
+                if !bubble.actionsRequireHover, !bubble.actions.isEmpty {
+                    permissionActionRow(bubble.actions).padding(.trailing, 10).padding(.bottom, 5)
+                }
+            }
+            .frame(width: bubbleSize.width, height: bubbleSize.height)
+            .animation(.easeOut(duration: 0.16), value: showsHoverActions)
+    }
+
+    private var bubbleSize: CGSize {
+        Self.size(
+            for: bubble,
+            presentation: presentation,
+            maxWidth: presentation == .expanded ? OpenPetsMessageLayout.expandedCardWidth : OpenPetsMessageLayout.stackedCardWidth,
+            messageAreaHeight: messageAreaHeight
+        )
+    }
+
+    private var bubbleContent: some View {
+        HStack(alignment: .center, spacing: 8) {
+            messageText
             Spacer(minLength: 0)
             trailingContent
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 8)
-        .padding(.bottom, bubble.actionsRequireHover || bubble.actions.isEmpty ? 0 : 30)
+        .padding(.leading, 18)
+        .padding(.trailing, 14)
+        .padding(.bottom, bubble.actionsRequireHover || bubble.actions.isEmpty ? 0 : 28)
         .frame(width: bubbleSize.width, height: bubbleSize.height)
-        .codexGlass(in: RoundedRectangle(cornerRadius: 27, style: .continuous), isDark: colorScheme == .dark)
+        .codexGlass(
+            in: RoundedRectangle(cornerRadius: OpenPetsMessageLayout.cornerRadius, style: .continuous),
+            isDark: colorScheme == .dark
+        )
+    }
+
+    private var messageText: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(bubble.title)
+                .font(.system(size: 14, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if let detail = bubble.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .layoutPriority(1)
     }
 
     @ViewBuilder private var trailingContent: some View {
-        if bubble.actionsRequireHover, showsHoverActions, hoverControlCount > 0 {
-            HStack(spacing: 10) {
-                if let activate = bubble.onActivate {
-                    circleButton(symbol: "arrow.uturn.backward", accessibilityLabel: "Reply", action: activate)
-                }
-                ForEach(bubble.actions.prefix(2)) { action in
-                    circleButton(
-                        symbol: action.id == "stop" ? "stop.fill" : "ellipsis",
-                        accessibilityLabel: action.label,
-                        action: action.handler
-                    )
-                }
-                if bubble.indicator == .review || bubble.indicator == .success {
-                    indicator.frame(width: 28, height: 28)
-                }
-            }
-            .transition(.opacity)
-        } else if bubble.indicator != .none {
-            indicator.frame(width: 28, height: 28)
+        switch bubble.indicator {
+        case .none, .working:
+            EmptyView()
+        default:
+            indicator.frame(width: 24, height: 24)
         }
     }
 
-    private func circleButton(symbol: String, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 28, height: 28, alignment: .center)
+    private var hoverActionRow: some View {
+        HStack(spacing: 6) {
+            if let activate = bubble.onActivate {
+                OpenPetsHoverButton(symbol: "arrow.uturn.backward", accessibilityLabel: "Reply", action: activate)
+            }
+            ForEach(bubble.actions.prefix(2)) { action in
+                OpenPetsHoverButton(
+                    symbol: action.id == "stop" ? "stop.fill" : "ellipsis",
+                    accessibilityLabel: action.label,
+                    action: action.handler
+                )
+            }
         }
-        .buttonStyle(.plain)
-        .codexGlass(in: Circle(), isDark: colorScheme == .dark)
-        .accessibilityLabel(accessibilityLabel)
+        .transition(.opacity)
     }
 
     private var hoverControlCount: Int {
-        (bubble.onActivate == nil ? 0 : 1)
-            + min(bubble.actions.count, 2)
-            + ((bubble.indicator == .review || bubble.indicator == .success) ? 1 : 0)
+        (bubble.onActivate == nil ? 0 : 1) + min(bubble.actions.count, 2)
     }
 
     private func permissionActionRow(_ actions: [PetBubbleAction]) -> some View {
@@ -652,43 +707,34 @@ struct OpenPetsBubbleContentView: View {
         }
     }
 
-    static func size(for bubble: PetBubble, maxWidth: CGFloat = 315, messageAreaHeight: CGFloat = 108) -> CGSize {
-        let titleFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
-        let detailFont = NSFont.systemFont(ofSize: 12.5)
+    static func size(
+        for bubble: PetBubble,
+        presentation: Presentation = .stacked,
+        maxWidth: CGFloat = OpenPetsMessageLayout.stackedCardWidth,
+        messageAreaHeight: CGFloat = 108
+    ) -> CGSize {
+        let titleFont = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        let detailFont = NSFont.systemFont(ofSize: 13)
         let titleWidth = ceil(NSString(string: bubble.title).size(withAttributes: [.font: titleFont]).width)
         let detailWidth = bubble.detail.map { ceil(NSString(string: $0).size(withAttributes: [.font: detailFont]).width) } ?? 0
-        let trailingWidth: CGFloat
-        let hoverControlCount = (bubble.onActivate == nil ? 0 : 1)
-            + min(bubble.actions.count, 2)
-            + ((bubble.indicator == .review || bubble.indicator == .success) ? 1 : 0)
-        if bubble.actionsRequireHover, hoverControlCount > 0 {
-            trailingWidth = CGFloat(hoverControlCount * 28 + max(0, hoverControlCount - 1) * 10 + 10)
-        } else {
-            trailingWidth = bubble.indicator == .none ? 0 : 38
+        let contentWidth = max(titleWidth, detailWidth)
+        let indicatorWidth: CGFloat = switch bubble.indicator {
+        case .none, .working: 0
+        default: 34
         }
-        let width = min(maxWidth, max(200, max(titleWidth, min(detailWidth, maxWidth - 44 - trailingWidth)) + 44 + trailingWidth))
-        var height: CGFloat = 54
-        if let detail = bubble.detail, !detail.isEmpty {
-            let rect = NSString(string: detail).boundingRect(
-                with: CGSize(width: max(1, width - 44 - trailingWidth), height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: [.font: detailFont]
-            )
-            let lines = min(bubble.detailLineLimit ?? Int.max, max(1, Int(ceil((rect.height - 0.5) / 15))))
-            height += CGFloat(lines - 1) * 15
-        }
-        if !bubble.actions.isEmpty && !bubble.actionsRequireHover { height += 30 }
-        height = min(messageAreaHeight, height)
-        return CGSize(width: width, height: height)
+        let width = min(maxWidth, max(220, contentWidth + 32 + indicatorWidth))
+        var height: CGFloat = detailWidth > 0 ? 54 : 46
+        if !bubble.actions.isEmpty && !bubble.actionsRequireHover { height += 28 }
+        return CGSize(width: width, height: min(messageAreaHeight, height))
     }
 
     @ViewBuilder private var indicator: some View {
         switch bubble.indicator {
         case .none: EmptyView()
-        case .working: ProgressView().controlSize(.small).opacity(0.72)
-        case .waiting: statusIcon(color: .orange.opacity(0.82), symbol: "clock", size: 12)
-        case .review, .success: statusIcon(color: .green.opacity(0.84), symbol: "checkmark", size: 13)
-        case .attention: statusIcon(color: .red.opacity(0.82), symbol: "xmark", size: 12)
+        case .working: EmptyView()
+        case .waiting: statusIcon(color: .orange.opacity(0.82), symbol: "clock", size: 10)
+        case .review, .success: statusIcon(color: .green.opacity(0.84), symbol: "checkmark", size: 11)
+        case .attention: statusIcon(color: .red.opacity(0.82), symbol: "xmark", size: 10)
         }
     }
 
@@ -697,23 +743,48 @@ struct OpenPetsBubbleContentView: View {
             Circle().fill(color)
             Image(systemName: symbol).font(.system(size: size, weight: .bold)).foregroundStyle(.white)
         }
-        .frame(width: 28, height: 28)
+        .frame(width: 24, height: 24)
+    }
+}
+
+private struct OpenPetsHoverButton: View {
+    let symbol: String
+    let accessibilityLabel: String
+    var size: CGFloat = 30
+    let action: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: size == 20 ? 9 : 12, weight: .semibold))
+                .foregroundStyle(isHovered ? Color.primary : Color.secondary)
+                .frame(width: size, height: size)
+                .contentShape(Circle())
+                .codexGlass(in: Circle(), isDark: colorScheme == .dark)
+                .overlay {
+                    Circle().fill(Color.primary.opacity(isHovered ? 0.12 : 0))
+                }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
+        }
+        .accessibilityLabel(accessibilityLabel)
     }
 }
 
 extension View {
-    @ViewBuilder
     func codexGlass<S: Shape>(in shape: S, isDark: Bool) -> some View {
-        if #available(macOS 26.0, *) {
-            glassEffect(.regular, in: shape)
-        } else {
-            background(
-                (isDark ? Color(nsColor: .windowBackgroundColor).opacity(0.90) : Color.white.opacity(0.90))
-                    .background(.ultraThinMaterial)
+        background(.ultraThinMaterial)
+            .background(
+                (isDark
+                    ? Color(red: 0.15, green: 0.13, blue: 0.12)
+                    : Color(red: 1.00, green: 0.975, blue: 0.94))
+                    .opacity(0.55)
             )
             .clipShape(shape)
-            .overlay(shape.stroke(Color.white.opacity(isDark ? 0.12 : 0.30), lineWidth: 0.75))
-            .shadow(color: .black.opacity(isDark ? 0.35 : 0.12), radius: 8, x: 0, y: 3)
-        }
+            .overlay(shape.stroke(Color.white.opacity(isDark ? 0.10 : 0.42), lineWidth: 0.5))
     }
 }

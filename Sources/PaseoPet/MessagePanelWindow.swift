@@ -143,7 +143,7 @@ final class MessagePanelWindow: NSPanel {
             targetFrame: targetFrame
         )
         badgeHostingView.rootView = makeBadgeView()
-        let targetBadgeFrame = badgeWindowFrame(for: petFrame, panelFrame: targetFrame)
+        let targetBadgeFrame = badgeWindowFrame(for: petFrame, panelFrame: targetFrame, visibleFrame: visible)
         badgePanel.orderFront(nil)
         if shouldAnimate {
             NSAnimationContext.runAnimationGroup { context in
@@ -168,17 +168,18 @@ final class MessagePanelWindow: NSPanel {
             return
         }
         badgeHostingView.rootView = makeBadgeView()
-        badgePanel.setFrame(badgeWindowFrame(for: petFrame), display: false)
+        let visible = (anchorWindow?.screen ?? NSScreen.main)?.visibleFrame.insetBy(dx: 8, dy: 8)
+        badgePanel.setFrame(badgeWindowFrame(for: petFrame, visibleFrame: visible), display: false)
         badgePanel.orderFront(nil)
     }
 
     private func makeBadgeView() -> PetBadgeView {
         PetBadgeView(
-            isCollapsed: panelView.isCollapsed,
+            mode: panelView.mode,
             count: panelView.activeMessageCount,
             indicator: panelView.highestIndicator,
             pointsUp: placement == .below,
-            onToggle: { [weak self] in self?.panelView.toggleMessageStackCollapsed() }
+            onToggle: { [weak self] in self?.panelView.advanceStackModeFromInteractionButton() }
         )
     }
 
@@ -195,8 +196,18 @@ final class MessagePanelWindow: NSPanel {
         )
     }
 
-    private func badgeWindowFrame(for petFrame: NSRect, panelFrame: NSRect? = nil) -> NSRect {
-        badgeVisibleFrame(for: petFrame, panelFrame: panelFrame).insetBy(dx: -Self.accessoryOutset, dy: -Self.accessoryOutset)
+    private func badgeWindowFrame(
+        for petFrame: NSRect,
+        panelFrame: NSRect? = nil,
+        visibleFrame: NSRect? = nil
+    ) -> NSRect {
+        var frame = badgeVisibleFrame(for: petFrame, panelFrame: panelFrame)
+            .insetBy(dx: -Self.accessoryOutset, dy: -Self.accessoryOutset)
+        if let visibleFrame {
+            frame.origin.x = min(max(frame.minX, visibleFrame.minX), max(visibleFrame.minX, visibleFrame.maxX - frame.width))
+            frame.origin.y = min(max(frame.minY, visibleFrame.minY), max(visibleFrame.minY, visibleFrame.maxY - frame.height))
+        }
+        return frame
     }
 
     private static var badgeWindowSize: CGSize {
@@ -287,18 +298,19 @@ final class MessagePanelWindow: NSPanel {
 }
 
 private struct PetBadgeView: View {
-    let isCollapsed: Bool
+    let mode: MessageStackMode
     let count: Int
     let indicator: PetBubbleIndicator
     let pointsUp: Bool
     let onToggle: () -> Void
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: onToggle) {
             ZStack {
-                if isCollapsed, let color = countColor { Circle().fill(color) }
-                if isCollapsed {
+                if mode == .collapsed, let color = countColor { Circle().fill(color) }
+                if mode == .collapsed {
                     Text("\(min(max(count, 1), 99))")
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .monospacedDigit()
@@ -311,10 +323,24 @@ private struct PetBadgeView: View {
             }
             .frame(width: 24, height: 24, alignment: .center)
             .codexGlass(in: Circle(), isDark: colorScheme == .dark)
+            .overlay {
+                Circle().fill(Color.primary.opacity(isHovered ? 0.10 : 0))
+            }
         }
         .buttonStyle(.plain)
         .padding(4)
-        .accessibilityLabel(isCollapsed ? "Show messages" : "Hide messages")
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) { isHovered = hovering }
+        }
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var accessibilityLabel: String {
+        switch mode {
+        case .collapsed: "Show messages"
+        case .stacked: "Hide messages"
+        case .expanded: "Stack messages"
+        }
     }
 
     private var countColor: Color? {
